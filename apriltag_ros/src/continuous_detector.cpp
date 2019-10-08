@@ -33,6 +33,15 @@
 
 #include <pluginlib/class_list_macros.h>
 
+/// Boost time, for tic() toc()
+#include "boost/date_time/posix_time/posix_time.hpp" ///!< include all types plus i/o
+
+/// Silly little timing functions, to get real CPU time, not ROS time
+boost::posix_time::ptime start_tic_toc[10];
+inline void tic(int i=0){start_tic_toc[i]=boost::posix_time::microsec_clock::universal_time();}
+inline double toc(int i=0){return ((double)(boost::posix_time::microsec_clock::universal_time()-start_tic_toc[i]).total_microseconds())/1000000.0;}
+
+
 PLUGINLIB_EXPORT_CLASS(apriltag_ros::ContinuousDetector, nodelet::Nodelet);
 
 namespace apriltag_ros
@@ -53,9 +62,10 @@ void ContinuousDetector::onInit ()
   it_ = std::shared_ptr<image_transport::ImageTransport>(
       new image_transport::ImageTransport(nh));
 
+  image_transport::TransportHints hints("compressed");
   camera_image_subscriber_ =
       it_->subscribeCamera("image_rect", 1,
-                          &ContinuousDetector::imageCallback, this);
+                          &ContinuousDetector::imageCallback, this, hints);
   tag_detections_publisher_ =
       nh.advertise<AprilTagDetectionArray>("tag_detections", 1);
   if (draw_tag_detections_image_)
@@ -80,9 +90,14 @@ void ContinuousDetector::imageCallback (
     return;
   }
 
+AprilTagDetectionArray tags;
+tic(0);
+tags=tag_detector_->detectTags(cv_image_,camera_info);
+ROS_INFO("Apriltag conversion took %6.3f seconds",toc(0));
+
+
   // Publish detected tags in the image by AprilTag 2
-  tag_detections_publisher_.publish(
-      tag_detector_->detectTags(cv_image_,camera_info));
+  tag_detections_publisher_.publish(tags);
 
   // Publish the camera image overlaid by outlines of the detected tags and
   // their payload values
